@@ -144,7 +144,27 @@ router.post('/:sessionId/messages', auth, validateMessage, async (req, res) => {
     };
 
     // Process message with AI
-    const aiResponse = await aiService.processMessage(content, context);
+    let aiResponse;
+    try {
+      aiResponse = await aiService.processMessage(content, context);
+    } catch (aiError) {
+      logger.error('AI processing error:', aiError);
+      // Fallback response if AI fails
+      aiResponse = {
+        id: uuidv4(),
+        content: "I'm here to help you with your onboarding! How can I assist you today?",
+        role: 'assistant',
+        timestamp: new Date(),
+        metadata: {
+          intent: 'fallback',
+          confidence: 0,
+          entities: [],
+          sentiment: { score: 0, label: 'neutral' },
+          processingTime: 0,
+          context
+        }
+      };
+    }
 
     // Add AI response to conversation
     await conversation.addMessage(aiResponse);

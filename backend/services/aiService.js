@@ -1,49 +1,18 @@
-import natural from 'natural';
-import Sentiment from 'sentiment';
 import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger.js';
 
 class AIService {
   constructor() {
-    this.sentiment = new Sentiment();
-    this.classifier = new natural.BayesClassifier();
-    this.tokenizer = new natural.WordTokenizer();
-    this.stemmer = natural.PorterStemmer;
-    
-    // Initialize with basic training data
-    this.initializeClassifier();
-  }
-
-  initializeClassifier() {
-    // Basic intent classification training data
-    const trainingData = [
-      { text: 'hello', intent: 'greeting' },
-      { text: 'hi there', intent: 'greeting' },
-      { text: 'good morning', intent: 'greeting' },
-      { text: 'help me', intent: 'help' },
-      { text: 'i need help', intent: 'help' },
-      { text: 'can you help', intent: 'help' },
-      { text: 'what is this', intent: 'question' },
-      { text: 'how does this work', intent: 'question' },
-      { text: 'explain', intent: 'question' },
-      { text: 'thank you', intent: 'gratitude' },
-      { text: 'thanks', intent: 'gratitude' },
-      { text: 'goodbye', intent: 'farewell' },
-      { text: 'bye', intent: 'farewell' },
-      { text: 'see you later', intent: 'farewell' },
-      { text: 'i want to learn', intent: 'learning' },
-      { text: 'teach me', intent: 'learning' },
-      { text: 'show me how', intent: 'learning' },
-      { text: 'i am confused', intent: 'confusion' },
-      { text: 'i don\'t understand', intent: 'confusion' },
-      { text: 'this is hard', intent: 'confusion' }
-    ];
-
-    trainingData.forEach(item => {
-      this.classifier.addDocument(item.text, item.intent);
-    });
-
-    this.classifier.train();
+    // Simple keyword-based intent recognition
+    this.intentKeywords = {
+      greeting: ['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening'],
+      help: ['help', 'assist', 'support', 'guide', 'how to'],
+      question: ['what', 'how', 'why', 'when', 'where', 'explain', 'tell me'],
+      gratitude: ['thank', 'thanks', 'appreciate', 'grateful'],
+      farewell: ['bye', 'goodbye', 'see you', 'farewell', 'exit'],
+      learning: ['learn', 'teach', 'show', 'tutorial', 'guide'],
+      confusion: ['confused', 'don\'t understand', 'unclear', 'difficult', 'hard']
+    };
   }
 
   async processMessage(message, context = {}) {
@@ -74,7 +43,7 @@ class AIService {
         timestamp: new Date(),
         metadata: {
           intent,
-          confidence: this.classifier.getClassifications(processedText)[0]?.value || 0,
+          confidence: intent.confidence,
           entities,
           sentiment,
           processingTime,
@@ -83,13 +52,21 @@ class AIService {
       };
     } catch (error) {
       logger.error('AI processing error:', error);
+      logger.error('Error details:', {
+        message: error.message,
+        stack: error.stack,
+        inputMessage: message,
+        context: context
+      });
+      
+      // Return a simple fallback response
       return {
         id: uuidv4(),
-        content: "I'm sorry, I encountered an error processing your message. Please try again.",
+        content: "Hello! I'm your AI assistant for onboarding. How can I help you today?",
         role: 'assistant',
         timestamp: new Date(),
         metadata: {
-          intent: 'error',
+          intent: { name: 'fallback', confidence: 0 },
           confidence: 0,
           entities: [],
           sentiment: { score: 0, label: 'neutral' },
@@ -109,32 +86,47 @@ class AIService {
   }
 
   classifyIntent(text) {
-    const classifications = this.classifier.getClassifications(text);
-    const topClassification = classifications[0];
+    const lowerText = text.toLowerCase();
+    let bestMatch = { name: 'unknown', confidence: 0 };
     
-    return {
-      name: topClassification?.label || 'unknown',
-      confidence: topClassification?.value || 0
-    };
+    for (const [intent, keywords] of Object.entries(this.intentKeywords)) {
+      const matches = keywords.filter(keyword => lowerText.includes(keyword));
+      const confidence = matches.length / keywords.length;
+      
+      if (confidence > bestMatch.confidence) {
+        bestMatch = { name: intent, confidence };
+      }
+    }
+    
+    return bestMatch;
   }
 
   analyzeSentiment(text) {
-    const result = this.sentiment.analyze(text);
+    const lowerText = text.toLowerCase();
+    const positiveWords = ['good', 'great', 'excellent', 'amazing', 'wonderful', 'happy', 'love', 'like', 'awesome'];
+    const negativeWords = ['bad', 'terrible', 'awful', 'hate', 'dislike', 'angry', 'sad', 'frustrated', 'annoyed'];
+    
+    let score = 0;
+    positiveWords.forEach(word => {
+      if (lowerText.includes(word)) score += 1;
+    });
+    negativeWords.forEach(word => {
+      if (lowerText.includes(word)) score -= 1;
+    });
     
     let label = 'neutral';
-    if (result.score > 2) label = 'positive';
-    else if (result.score < -2) label = 'negative';
+    if (score > 0) label = 'positive';
+    else if (score < 0) label = 'negative';
     
     return {
-      score: result.score,
+      score,
       label,
-      comparative: result.comparative
+      comparative: score / text.split(' ').length
     };
   }
 
   extractEntities(text) {
     const entities = [];
-    const tokens = this.tokenizer.tokenize(text);
     
     // Simple entity extraction based on patterns
     const patterns = {
@@ -307,11 +299,13 @@ class AIService {
     }
   }
 
-  // Method to retrain classifier with new data
-  addTrainingData(text, intent) {
-    this.classifier.addDocument(text, intent);
-    this.classifier.train();
-    logger.info(`Added training data: "${text}" -> ${intent}`);
+  // Method to add new intent keywords
+  addIntentKeywords(intent, keywords) {
+    if (!this.intentKeywords[intent]) {
+      this.intentKeywords[intent] = [];
+    }
+    this.intentKeywords[intent].push(...keywords);
+    logger.info(`Added keywords for intent "${intent}": ${keywords.join(', ')}`);
   }
 
   // Method to get conversation suggestions

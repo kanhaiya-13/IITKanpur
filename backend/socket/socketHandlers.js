@@ -98,7 +98,7 @@ const setupSocketHandlers = (io) => {
 
         // Create user message
         const userMessage = {
-          id: require('uuid').v4(),
+          id: uuidv4(),
           content,
           role,
           timestamp: new Date()
@@ -122,7 +122,27 @@ const setupSocketHandlers = (io) => {
           conversationHistory: conversation.getRecentMessages(5)
         };
 
-        const aiResponse = await aiService.processMessage(content, context);
+        let aiResponse;
+        try {
+          aiResponse = await aiService.processMessage(content, context);
+        } catch (aiError) {
+          logger.error('AI processing error in socket:', aiError);
+          // Fallback response if AI fails
+          aiResponse = {
+            id: uuidv4(),
+            content: "I'm here to help you with your onboarding! How can I assist you today?",
+            role: 'assistant',
+            timestamp: new Date(),
+            metadata: {
+              intent: 'fallback',
+              confidence: 0,
+              entities: [],
+              sentiment: { score: 0, label: 'neutral' },
+              processingTime: 0,
+              context
+            }
+          };
+        }
 
         // Add AI response to conversation
         await conversation.addMessage(aiResponse);
@@ -145,7 +165,10 @@ const setupSocketHandlers = (io) => {
 
       } catch (error) {
         logger.error('Send message error:', error);
-        socket.emit('error', { message: 'Error processing message' });
+        socket.emit('error', { 
+          message: 'Error processing message',
+          details: process.env.NODE_ENV === 'development' ? error.message : 'Please try again'
+        });
       }
     });
 

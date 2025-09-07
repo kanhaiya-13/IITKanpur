@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Conversational Agent Framework for Onboarding",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:backend": "cd backend && npm run dev",

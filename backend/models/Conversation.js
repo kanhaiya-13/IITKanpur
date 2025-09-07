@@ -19,7 +19,10 @@ const messageSchema = new mongoose.Schema({
     default: Date.now
   },
   metadata: {
-    intent: String,
+    intent: {
+      name: String,
+      confidence: Number
+    },
     confidence: Number,
     entities: [{
       type: String,
@@ -30,7 +33,8 @@ const messageSchema = new mongoose.Schema({
       score: Number,
       label: String
     },
-    context: mongoose.Schema.Types.Mixed
+    context: mongoose.Schema.Types.Mixed,
+    processingTime: Number
   },
   attachments: [{
     type: String,
