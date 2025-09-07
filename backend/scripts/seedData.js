@@ -5,6 +5,7 @@ dotenv.config();
 
 import User from '../models/User.js';
 import OnboardingFlow from '../models/OnboardingFlow.js';
+import seedLoanFlow from './seedLoanFlow.js';
 
 const connectDB = async () => {
   try {
@@ -216,6 +217,7 @@ const seedData = async () => {
   // Seed new data
   await seedUsers();
   await seedOnboardingFlows();
+  await seedLoanFlow();
   
   console.log('Database seeded successfully!');
   process.exit(0);

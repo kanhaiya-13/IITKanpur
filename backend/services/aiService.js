@@ -1,5 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger.js';
+import OnboardingFlowConfig from '../models/OnboardingFlowConfig.js';
+import OnboardingProgress from '../models/OnboardingProgress.js';
 
 class AIService {
   constructor() {
@@ -11,13 +13,22 @@ class AIService {
       gratitude: ['thank', 'thanks', 'appreciate', 'grateful'],
       farewell: ['bye', 'goodbye', 'see you', 'farewell', 'exit'],
       learning: ['learn', 'teach', 'show', 'tutorial', 'guide'],
-      confusion: ['confused', 'don\'t understand', 'unclear', 'difficult', 'hard']
+      confusion: ['confused', 'don\'t understand', 'unclear', 'difficult', 'hard'],
+      confirmation: ['yes', 'correct', 'right', 'that\'s right', 'confirm', 'proceed', 'go ahead'],
+      correction: ['no', 'wrong', 'incorrect', 'change', 'modify', 'edit', 'update'],
+      start_flow: ['start', 'begin', 'ready', 'let\'s go', 'proceed', 'continue'],
+      skip: ['skip', 'next', 'pass', 'not applicable', 'n/a']
     };
   }
 
   async processMessage(message, context = {}) {
     try {
       const startTime = Date.now();
+      
+      // Check if user is in an onboarding flow
+      if (context.onboardingProgress) {
+        return await this.processOnboardingMessage(message, context);
+      }
       
       // Basic text preprocessing
       const processedText = this.preprocessText(message);
@@ -75,6 +86,207 @@ class AIService {
         }
       };
     }
+  }
+
+  async processOnboardingMessage(message, context) {
+    try {
+      const { onboardingProgress, flowConfig } = context;
+      const currentStep = flowConfig.steps.find(step => step.stepId === onboardingProgress.currentStep);
+      
+      if (!currentStep) {
+        return this.createResponse("I'm sorry, I couldn't find the current step. Let me help you restart the process.");
+      }
+
+      const intent = this.classifyIntent(message.toLowerCase());
+      
+      // Handle confirmation responses
+      if (intent.name === 'confirmation' && currentStep.isCheckpoint) {
+        return await this.handleStepConfirmation(onboardingProgress, currentStep, flowConfig);
+      }
+      
+      // Handle correction responses
+      if (intent.name === 'correction' && currentStep.isCheckpoint) {
+        return this.createResponse("I understand you'd like to make changes. Please tell me which information needs to be corrected.");
+      }
+      
+      // Handle data collection
+      if (currentStep.stepType === 'data_collection') {
+        return await this.handleDataCollection(message, onboardingProgress, currentStep, flowConfig);
+      }
+      
+      // Handle completion
+      if (currentStep.stepType === 'completion') {
+        return this.createResponse(currentStep.confirmationMessage || flowConfig.completionMessage);
+      }
+      
+      return this.createResponse("I'm not sure how to help with that. Could you please provide the information I asked for?");
+      
+    } catch (error) {
+      logger.error('Onboarding message processing error:', error);
+      return this.createResponse("I encountered an error processing your response. Please try again.");
+    }
+  }
+
+  async handleDataCollection(message, onboardingProgress, currentStep, flowConfig) {
+    const currentStepProgress = onboardingProgress.getCurrentStepProgress();
+    
+    if (!currentStepProgress) {
+      // Initialize step progress
+      onboardingProgress.stepProgress.push({
+        stepId: currentStep.stepId,
+        stepName: currentStep.stepName,
+        status: 'in_progress',
+        startedAt: new Date(),
+        fieldData: []
+      });
+    }
+    
+    // Find the next field to collect
+    const nextField = this.getNextFieldToCollect(currentStep, onboardingProgress);
+    
+    if (!nextField) {
+      // All fields collected, show confirmation
+      return await this.showStepConfirmation(onboardingProgress, currentStep, flowConfig);
+    }
+    
+    // Extract field value from message
+    const fieldValue = this.extractFieldValue(message, nextField);
+    
+    if (fieldValue !== null) {
+      // Update field data
+      await onboardingProgress.updateFieldData(currentStep.stepId, nextField.fieldId, fieldValue);
+      
+      // Check if this was the last field
+      const remainingFields = this.getRemainingFields(currentStep, onboardingProgress);
+      if (remainingFields.length === 0) {
+        return await this.showStepConfirmation(onboardingProgress, currentStep, flowConfig);
+      } else {
+        // Ask for next field
+        const nextFieldToAsk = remainingFields[0];
+        return this.createResponse(nextFieldToAsk.prompt);
+      }
+    } else {
+      // Could not extract value, ask for clarification
+      return this.createResponse(`I couldn't understand that. ${nextField.prompt}`);
+    }
+  }
+
+  async showStepConfirmation(onboardingProgress, currentStep, flowConfig) {
+    const currentStepProgress = onboardingProgress.getCurrentStepProgress();
+    const confirmationData = this.buildConfirmationData(currentStep, currentStepProgress);
+    
+    const confirmationMessage = currentStep.confirmationMessage.replace('{confirmation_data}', confirmationData);
+    
+    return this.createResponse(confirmationMessage);
+  }
+
+  async handleStepConfirmation(onboardingProgress, currentStep, flowConfig) {
+    // Confirm the step data
+    const currentStepProgress = onboardingProgress.getCurrentStepProgress();
+    const confirmationData = this.buildConfirmationData(currentStep, currentStepProgress);
+    
+    await onboardingProgress.confirmStepData(currentStep.stepId, confirmationData);
+    
+    // Move to next step
+    if (currentStep.nextStep) {
+      await onboardingProgress.moveToNextStep(currentStep.nextStep);
+      const nextStep = flowConfig.steps.find(step => step.stepId === currentStep.nextStep);
+      
+      if (nextStep && nextStep.stepType === 'data_collection') {
+        const firstField = nextStep.fields[0];
+        return this.createResponse(firstField.prompt);
+      } else if (nextStep && nextStep.stepType === 'completion') {
+        return this.createResponse(nextStep.confirmationMessage || flowConfig.completionMessage);
+      }
+    }
+    
+    return this.createResponse("Thank you for confirming. Let me process this information.");
+  }
+
+  getNextFieldToCollect(currentStep, onboardingProgress) {
+    const currentStepProgress = onboardingProgress.getCurrentStepProgress();
+    if (!currentStepProgress) return currentStep.fields[0];
+    
+    const collectedFields = currentStepProgress.fieldData.map(field => field.fieldId);
+    return currentStep.fields.find(field => !collectedFields.includes(field.fieldId));
+  }
+
+  getRemainingFields(currentStep, onboardingProgress) {
+    const currentStepProgress = onboardingProgress.getCurrentStepProgress();
+    if (!currentStepProgress) return currentStep.fields;
+    
+    const collectedFields = currentStepProgress.fieldData.map(field => field.fieldId);
+    return currentStep.fields.filter(field => !collectedFields.includes(field.fieldId));
+  }
+
+  extractFieldValue(message, field) {
+    const lowerMessage = message.toLowerCase();
+    
+    switch (field.fieldType) {
+      case 'text':
+      case 'textarea':
+        return message.trim();
+      
+      case 'email':
+        const emailMatch = message.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/);
+        return emailMatch ? emailMatch[0] : null;
+      
+      case 'phone':
+        const phoneMatch = message.match(/\b\d{10}\b|\b\d{3}[-.]?\d{3}[-.]?\d{4}\b/);
+        return phoneMatch ? phoneMatch[0] : null;
+      
+      case 'date':
+        // Simple date extraction - can be enhanced
+        const dateMatch = message.match(/\b\d{1,2}(?:st|nd|rd|th)?\s+(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{4}\b/i);
+        if (dateMatch) return dateMatch[0];
+        
+        const numericDateMatch = message.match(/\b\d{1,2}[-/]\d{1,2}[-/]\d{4}\b/);
+        return numericDateMatch ? numericDateMatch[0] : null;
+      
+      case 'number':
+        const numberMatch = message.match(/\b\d+(?:,\d{3})*(?:\.\d{2})?\b/);
+        return numberMatch ? numberMatch[0] : null;
+      
+      case 'select':
+        if (field.validation && field.validation.options) {
+          const selectedOption = field.validation.options.find(option => 
+            lowerMessage.includes(option.toLowerCase())
+          );
+          return selectedOption || null;
+        }
+        return null;
+      
+      default:
+        return message.trim();
+    }
+  }
+
+  buildConfirmationData(currentStep, stepProgress) {
+    if (!stepProgress || !stepProgress.fieldData) return '';
+    
+    return stepProgress.fieldData.map(fieldData => {
+      const field = currentStep.fields.find(f => f.fieldId === fieldData.fieldId);
+      if (!field) return '';
+      
+      const confirmationPrompt = field.confirmationPrompt || `${field.fieldName}: {value}`;
+      return confirmationPrompt.replace('{value}', fieldData.value);
+    }).join('\n');
+  }
+
+  createResponse(content) {
+    return {
+      id: uuidv4(),
+      content,
+      role: 'assistant',
+      timestamp: new Date(),
+      metadata: {
+        intent: { name: 'onboarding', confidence: 1 },
+        confidence: 1,
+        entities: [],
+        sentiment: { score: 0, label: 'neutral' },
+        processingTime: 0
+      }
+    };
   }
 
   preprocessText(text) {

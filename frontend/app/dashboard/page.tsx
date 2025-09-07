@@ -215,12 +215,12 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <Link href="/onboarding" className="card hover:shadow-lg transition-shadow duration-300">
+          <Link href="/flows" className="card hover:shadow-lg transition-shadow duration-300">
             <div className="flex items-center">
-              <CheckCircleIcon className="h-8 w-8 text-green-600 mr-3" />
+              <SparklesIcon className="h-8 w-8 text-purple-600 mr-3" />
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">Onboarding</h3>
-                <p className="text-gray-600">Complete your setup</p>
+                <h3 className="text-lg font-semibold text-gray-900">Onboarding Flows</h3>
+                <p className="text-gray-600">Start guided processes</p>
               </div>
             </div>
           </Link>

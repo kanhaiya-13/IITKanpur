@@ -2,6 +2,8 @@ import express from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import Conversation from '../models/Conversation.js';
 import User from '../models/User.js';
+import OnboardingFlowConfig from '../models/OnboardingFlowConfig.js';
+import OnboardingProgress from '../models/OnboardingProgress.js';
 import aiService from '../services/aiService.js';
 import { auth, optionalAuth } from '../middleware/auth.js';
 import { validateMessage, validateConversation, validateObjectId, validatePagination } from '../middleware/validation.js';
@@ -136,12 +138,33 @@ router.post('/:sessionId/messages', auth, validateMessage, async (req, res) => {
 
     // Get user context for AI processing
     const user = await User.findById(req.user._id);
-    const context = {
+    
+    // Check if this conversation is part of an onboarding flow
+    const onboardingProgress = await OnboardingProgress.findOne({
+      sessionId,
+      userId: req.user._id,
+      status: { $in: ['active', 'paused'] }
+    });
+
+    let context = {
       userId: req.user._id,
       userProfile: user.profile,
       onboardingStep: user.onboarding.currentStep,
       conversationHistory: conversation.getRecentMessages(5)
     };
+
+    // If user is in an onboarding flow, add flow context
+    if (onboardingProgress) {
+      const flowConfig = await OnboardingFlowConfig.findOne({
+        flowId: onboardingProgress.flowId,
+        isActive: true
+      });
+
+      if (flowConfig) {
+        context.onboardingProgress = onboardingProgress;
+        context.flowConfig = flowConfig;
+      }
+    }
 
     // Process message with AI
     let aiResponse;

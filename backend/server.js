@@ -12,6 +12,7 @@ import authRoutes from './routes/auth.js';
 import conversationRoutes from './routes/conversations.js';
 import userRoutes from './routes/users.js';
 import onboardingRoutes from './routes/onboarding.js';
+import onboardingFlowRoutes from './routes/onboardingFlows.js';
 import { setupSocketHandlers } from './socket/socketHandlers.js';
 import logger from './utils/logger.js';
 
@@ -56,6 +57,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/conversations', conversationRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/onboarding', onboardingRoutes);
+app.use('/api/onboarding-flows', onboardingFlowRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
