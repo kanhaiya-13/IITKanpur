@@ -1,0 +1,24 @@
+{
+  "name": "conversational-agent-onboarding",
+  "version": "1.0.0",
+  "description": "Conversational Agent Framework for Onboarding",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "start": "cd backend && npm start",
+    "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "seed": "cd backend && node scripts/seedData.js",
+    "test": "cd backend && npm test",
+    "lint": "cd frontend && npm run lint",
+    "clean": "rmdir /s /q node_modules backend\\node_modules frontend\\node_modules 2>nul || rm -rf node_modules backend/node_modules frontend/node_modules"
+  },
+  "keywords": ["conversational-ai", "onboarding", "chatbot", "nlp"],
+  "author": "IIT Kanpur",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
